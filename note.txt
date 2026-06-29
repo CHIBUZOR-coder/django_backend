@@ -1,0 +1,78 @@
+1.fixed Storage dictionary to use cloudinary
+2.added deboogtool url
+3.run python manage.py collectstatic to make admin panel loog good and made sure that the below lines are present in settings.py:
+STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"  # ◄ Make sure this line is present!
+
+MEDIA_URL = "/media/"
+
+3.To keep django-cloudinary-storage happy without breaking Django 6.0's strict backend rules, we can manually add that expected legacy string definition directly under your modern STORAGES dictionary in settings.py. This gives the third-party package the exact variable text it is hunting for.
+4.  python manage.py collectstatic
+The python manage.py collectstatic command is a built-in Django utility that scans your entire project—including your virtual environment and third-party apps—to gather all scattered static files (like CSS, JavaScript, and images) into a single, centralized location. When using cloud storage like Cloudinary, this command is required because Django stops serving these assets locally. By running it, you successfully uploaded all 174 admin styling files across the internet to your Cloudinary bucket, allowing your browser to download the stylesheets directly from the cloud and completely fix your broken admin panel layout.
+
+
+5. python manage.py createsuperuser
+
+6. Created usermanager class in models.py. this is to configure how users are created. Becaues changing usernamefield to email breaks django rules and the usermanager fixiex it
+
+7. updated CreateUser view
+
+8. update add order serializer
+9. Add email credentials in settings.py
+
+10. Revise updateuserSerializer and upddateProductSerializer to destroy old images in cloudinary after image update
+
+11. added password reset functionality. (utils, views)
+
+
+
+
+*****You need a serializer when:
+Use a serializer when:
+✅ Writing to a database model (create/update)
+✅ Reading from a database model (with nested/complex data)
+✅ Complex validation logic
+✅ Many fields to validate
+
+Skip a serializer when:
+✅ Just reading a few simple fields from request
+✅ Validation is simple (just checking field exists)
+✅ Not directly saving to a model
+
+12. Correction in CartRemoveItemView and CartRemoveItemView
+
+
+# ❌ WRONG — querying Product model which has no 'cart' field
+cart_item: Product = get_object_or_404(
+    Product, id=item_id, cart__user=request.user
+)
+
+# ✅ CORRECT — querying Product_cart which has the 'cart' field
+cart_item: Product_cart = get_object_or_404(
+    Product_cart, id=item_id, cart__user=request.user
+)
+
+
+
+13. Get flutterwave secrete key
+FLW_SECRET_KEY=FLWSECK_TEST-xxxxxxxxxxxx-X
+FLW_PUBLIC_KEY=FLWPUBK_TEST-xxxxxxxxxxxx-X
+FRONTEND_DOMAIN=http://localhost:3000
+
+14.update orderCheckout view and add payment verification view(also update the url)
+
+15 create a recipt model
+
+
+16. make Migration and Migrate:
+python manage.py makemigrations
+python manage.py migrate
+
+
+17. fix GetOrderSerializer && AddOrderSerializer
+
+class GetOrderSerializer(serializers.ModelSerializer):
+    items = GetOrderedProduct(source="order_items", many=True, read_only=True)  # ← fix
+
+class AddOrderSerializer(serializers.ModelSerializer):
+    items = GetOrderedProduct(source="order_items", many=True, read_only=True)  # ← fix
