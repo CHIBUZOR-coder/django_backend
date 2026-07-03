@@ -259,24 +259,25 @@ class AddToCartSerializer(serializers.ModelSerializer):
     quantity = serializers.IntegerField(default=1)
 
     class Meta:
-        # Match your exact database model name
         model = ProductCartType
         fields = ["cart", "product", "quantity", "size"]
+        validators = []  # ← disables model-level validators
         extra_kwargs = {
-            # Mark size optional here so the model's custom .save() fallback can kick in
             "size": {"required": False, "allow_null": True, "allow_blank": True},
         }
+
+    def get_validators(self):
+        # ← THIS is what actually stops DRF's auto-generated UniqueTogetherValidator
+        # Without this, DRF ignores validators=[] and still runs its own unique check
+        return []
 
     def validate(self, attrs):
         product = attrs["product"]
         quantity = attrs["quantity"]
         cart = attrs["cart"]
 
-        # Determine the size used for looking up existing duplicates
-        # If the payload size is blank, look up the product's defaultSize ahead of time
         size = attrs.get("size") or product.defaultSize
 
-        # 🔍 Find out how many of this exact item/size combinations are ALREADY in this cart
         existing_item = ProductCartType.objects.filter(
             cart=cart, product=product, size=size
         ).first()
@@ -284,7 +285,6 @@ class AddToCartSerializer(serializers.ModelSerializer):
         already_in_cart = existing_item.quantity if existing_item else 0
         total_requested = already_in_cart + quantity
 
-        # Inventory check
         if total_requested > product.quantity:
             raise serializers.ValidationError(
                 f"Cannot add {quantity} more items. You already have {already_in_cart} in your cart, "
@@ -298,10 +298,8 @@ class AddToCartSerializer(serializers.ModelSerializer):
         cart = validated_data["cart"]
         quantity = validated_data["quantity"]
 
-        # Handle the size configuration safely
         size = validated_data.get("size") or product.defaultSize
 
-        # Matches your exact model UniqueConstraint structure
         cart_item, created = ProductCartType.objects.get_or_create(
             cart=cart,
             product=product,
@@ -310,6 +308,7 @@ class AddToCartSerializer(serializers.ModelSerializer):
         )
 
         if not created:
+            # Item already exists — just increment the quantity
             cart_item.quantity += quantity
             cart_item.save()
 

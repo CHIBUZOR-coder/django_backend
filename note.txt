@@ -76,3 +76,6 @@ class GetOrderSerializer(serializers.ModelSerializer):
 
 class AddOrderSerializer(serializers.ModelSerializer):
     items = GetOrderedProduct(source="order_items", many=True, read_only=True)  # ← fix
+
+
+    1Removed dfr validator in AddCart serializer

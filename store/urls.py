@@ -41,7 +41,7 @@ urlpatterns = [
     # =========================================================================
     # http://127.0.0.1:9000/store/createproduct/
     path("createproduct/", ProductCreateView.as_view(), name="create-product"),
-    # http://127.0.0.1:9000/store/updateproduct/
+    # http://127.0.0.1:9000/store/updateproduct/1/
     path(
         "updateproduct/<int:product_id>/",
         ProductUpdateView.as_view(),
