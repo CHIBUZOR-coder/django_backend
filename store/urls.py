@@ -77,6 +77,7 @@ urlpatterns = [
     path("orders/<int:order_id>/", OrderDetailView.as_view(), name="order-detail"),
     # =========================================================================
     # PAYMENT
+    # http://127.0.0.1:9000/store/payment/verify/
     # =========================================================================
     path("payment/verify/", PaymentVerifyView.as_view(), name="payment-verify"),
     # =========================================================================
