@@ -1,5 +1,4 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
 
 
 from django.contrib.auth.models import AbstractUser, BaseUserManager
@@ -8,35 +7,98 @@ from django.db import models
 
 # 1. Create a custom manager to handle user and superuser generation
 class UserManager(BaseUserManager):
-    def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError("The Email field must be set")
-        email = self.normalize_email(email)
+    class UserManager(BaseUserManager):
+        def create_user(self, email, password=None, **extra_fields):
+            if not email:
+                raise ValueError("The Email field must be set")
+            email = self.normalize_email(email)
 
-        # Ensure username isn't forced if it's null
-        extra_fields.setdefault("username", None)
+            # Set sensible defaults for new users
+            extra_fields.setdefault("username", None)
+            extra_fields.setdefault("is_active", True)
+            extra_fields.setdefault("is_verified", False)
 
-        user = self.model(email=email, **extra_fields)
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
+            user = self.model(email=email, **extra_fields)
+            user.set_password(password)
+            user.save(using=self._db)
+            return user
 
-    def create_superuser(self, email, password=None, **extra_fields):
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
+        # def create_user(self, email, password=None, **extra_fields):
+        #     if not email:
+        #         raise ValueError("The Email field must be set")
+        #     email = self.normalize_email(email)
 
-        if extra_fields.get("is_staff") is not True:
-            raise ValueError("Superuser must have is_staff=True.")
-        if extra_fields.get("is_superuser") is not True:
-            raise ValueError("Superuser must have is_superuser=True.")
+        #     # Set sensible defaults for new users
+        #     extra_fields.setdefault("username", None)
+        #     extra_fields.setdefault("is_active", True)
+        #     extra_fields.setdefault("is_verified", False)
 
-        return self.create_user(email, password, **extra_fields)
+        #     user = self.model(email=email, **extra_fields)
+        #     user.set_password(password)
+        #     user.save(using=self._db)
+        #     return user
+
+        def create_superuser(self, email, password=None, **extra_fields):
+            extra_fields.setdefault("is_staff", True)
+            extra_fields.setdefault("is_superuser", True)
+
+            if extra_fields.get("is_staff") is not True:
+                raise ValueError("Superuser must have is_staff=True.")
+            if extra_fields.get("is_superuser") is not True:
+                raise ValueError("Superuser must have is_superuser=True.")
+
+            return self.create_user(email, password, **extra_fields)
+
+from django.contrib.auth.models import BaseUserManager
+
+
+# class UserManager(BaseUserManager):
+#     def create_user(self, email, password=None, **extra_fields):
+#         if not email:
+#             raise ValueError("The Email field must be set")
+
+#         # 1. Normalize email (e.g., USER@Example.Com -> USER@example.com)
+#         email = self.normalize_email(email)
+
+#         # 2. Set default flags for standard user registration
+#         extra_fields.setdefault("username", None)
+#         extra_fields.setdefault("is_active", True)
+#         extra_fields.setdefault("is_verified", False)
+
+#         # 3. Instantiate model in memory
+#         user = self.model(email=email, **extra_fields)
+
+#         # 4. Hash password before saving to DB
+#         if password:
+#             user.set_password(password)
+#         else:
+#             user.set_unusable_password()
+
+#         # 5. Perform a single SQL INSERT
+#         user.save(using=self._db)
+#         return user
+
+#     def create_superuser(self, email, password=None, **extra_fields):
+#         # Enforce superuser permissions
+#         extra_fields.setdefault("is_staff", True)
+#         extra_fields.setdefault("is_superuser", True)
+#         extra_fields.setdefault("is_active", True)
+
+#         # Superusers bypass email verification so you aren't locked out of Django Admin
+#         extra_fields.setdefault("is_verified", True)
+
+#         if extra_fields.get("is_staff") is not True:
+#             raise ValueError("Superuser must have is_staff=True.")
+#         if extra_fields.get("is_superuser") is not True:
+#             raise ValueError("Superuser must have is_superuser=True.")
+
+#         return self.create_user(email, password, **extra_fields)
 
 
 # 2. Update your User model to use the new manager
 class User(AbstractUser):
     name = models.CharField(max_length=300, null=False, blank=False)
-    username = models.CharField(max_length=300, null=True, blank=False, unique=False)
+    username = models.CharField(max_length=300, null=True, blank=True, unique=False)
     phone = models.CharField(max_length=12, null=False, blank=False)
     email = models.EmailField(unique=True)
     image = models.ImageField(upload_to="userImage/", null=True, blank=True)

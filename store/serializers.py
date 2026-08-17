@@ -48,13 +48,14 @@ class CreateUserSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-    read_only_fields = ["id", "created_at", "updated_at"]
-    extra_kwargs = {"password": {"write_only": True}}
+        read_only_fields = ["id", "created_at", "updated_at"]
+        extra_kwargs = {"password": {"write_only": True}}
 
     def create(self, validated_data: Dict[str, Any]) -> UserType:
+        # Extracting password and removing it with .pop() to  Prevents Storing Raw Passwords
         password = validated_data.pop("password", None)
 
-        # 1. Force the account state locks directly onto the initialization payload
+        # Hardcode core account flags directly into payload: force is_verified=False to require email verification, and is_active=True so Django's auth system can recognize the account during login.
         validated_data["is_verified"] = False
         validated_data["is_active"] = (
             True  # Ensure active so your login can read it later
@@ -72,9 +73,6 @@ class CreateUserSerializer(serializers.ModelSerializer):
         send_verification_email(user)
 
         return user
-
-
-import cloudinary.uploader  # ← add this at the top of serializers.py
 
 
 class updateUserSerializer(serializers.ModelSerializer):
@@ -108,6 +106,40 @@ class updateUserSerializer(serializers.ModelSerializer):
                 print("DELETE FAILED:", e)
 
         return super().update(instance, validated_data)
+
+
+# class UpdateUserSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = UserType
+#         fields = [
+#             "name",
+#             "username",
+#             "phone",
+#             "email",
+#             "image",
+#             "password",
+#         ]
+#         extra_kwargs = {"password": {"write_only": True, "required": False}}
+
+#     def update(self, instance: "UserType", validated_data: Dict[str, Any]) -> UserType:
+#         # 1. Pop the password so super().update() doesn't write plain text
+#         password = validated_data.pop("password", None)
+
+#         # 2. Handle Cloudinary cleanup
+#         new_image = validated_data.get("image")
+#         if new_image and instance.image:
+#             old_public_id = instance.image.name
+#             try:
+#                 cloudinary.uploader.destroy(old_public_id)
+#             except Exception as e:
+#                 print("DELETE FAILED:", e)
+
+#         # 3. Hash password safely if a new one was provided
+#         if password:
+#             instance.set_password(password)
+
+#         # 4. Let super().update() update remaining fields (name, phone, image) and call .save()
+#         return super().update(instance, validated_data)
 
 
 class LoginSerializer(serializers.Serializer):

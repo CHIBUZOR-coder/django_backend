@@ -69,7 +69,16 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 
 AUTH_USER_MODEL = "store.User"
+# settings.py
+
+
+
+# ← ADD THIS RIGHT HERE
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # React dev server
+]
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",

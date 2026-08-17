@@ -20,7 +20,6 @@ from .serializers import (
     CartSerializer,
     AddOrderSerializer,
     GetOrderSerializer,
-    
 )
 from django.shortcuts import get_object_or_404
 from .models import Product, Cart, Product_cart, Order, User, Receipt
@@ -152,6 +151,43 @@ class ProductCreateView(APIView):
         )
 
 
+class ProductListView(APIView):
+    """
+    Endpoint to retrieve all products available in the store.
+    Accepts: GET request (No auth needed — anyone can browse products)
+    """
+
+    permission_classes = [AllowAny]  # ← no login required to see products
+
+    def get(self, request):
+        # 1. Fetch all products from the database
+        products = Product.objects.all()
+
+        # 2. Serialize the list of products
+        # many=True because we're returning multiple products
+        serializer = GetProductSerializer(products, many=True)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class ProductDetailView(APIView):
+    """
+    Endpoint to retrieve a single product by its ID.
+    Accepts: GET request with product_id in URL
+    """
+
+    permission_classes = [AllowAny]  # ← no login required
+
+    def get(self, request, product_id: int):
+        # 1. Find the product or return 404 if it doesn't exist
+        product = get_object_or_404(Product, id=product_id)
+
+        # 2. Serialize the single product
+        serializer = GetProductSerializer(product)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 class ProductUpdateView(APIView):
 
     permission_classes = [IsAdminUser]
@@ -210,14 +246,14 @@ class CartAddItemView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         # 4. Save updates (runs your custom create method with stock checks)
-        cart_line_item = serializer.save()
+        serializer.save()
 
-        # 5. Dual Serializer Design Pattern: Format outbound output using deep nested read fields
-        response_serializer = ProductCartDetailsSerializer(cart_line_item)
+        # 5. Return the full cart so the frontend can simply replace its local state
+        cart_serializer = CartSerializer(user_cart)
         return Response(
             {
                 "message": "Item successfully updated in your cart.",
-                "cart_item": response_serializer.data,
+                "cart": cart_serializer.data,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -239,28 +275,22 @@ class CartDecrementItemView(APIView):
             Product_cart, id=item_id, cart__user=request.user
         )
 
+        user_cart = cart_item.cart
+
         if cart_item.quantity > 1:
             cart_item.quantity -= 1
             cart_item.save()
-
-            # Return updated object back to UI so badge counts match smoothly
-            response_serializer = ProductCartDetailsSerializer(cart_item)
-            return Response(
-                {
-                    "message": "Item quantity reduced.",
-                    "cart_item": response_serializer.data,
-                },
-                status=status.HTTP_200_OK,
-            )
         else:
-            # If quantity was 1, reducing it down means purging it entirely
             cart_item.delete()
-            return Response(
-                {
-                    "message": "Item completely removed from cart because quantity hit zero."
-                },
-                status=status.HTTP_200_OK,
-            )
+
+        cart_serializer = CartSerializer(user_cart)
+        return Response(
+            {
+                "message": "Cart updated.",
+                "cart": cart_serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CartRemoveItemView(APIView):
@@ -273,10 +303,15 @@ class CartRemoveItemView(APIView):
     def delete(self, request, item_id) -> Response:
         # Secure boundary query check
         cart_item = get_object_or_404(Product_cart, id=item_id, cart__user=request.user)
+        user_cart = cart_item.cart
         cart_item.delete()
 
+        cart_serializer = CartSerializer(user_cart)
         return Response(
-            {"message": "Item line completely cleared from your shopping cart."},
+            {
+                "message": "Item line completely cleared from your shopping cart.",
+                "cart": cart_serializer.data,
+            },
             status=status.HTTP_200_OK,
         )
 

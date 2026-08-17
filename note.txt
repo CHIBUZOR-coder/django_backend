@@ -1,81 +1,214 @@
-1.fixed Storage dictionary to use cloudinary
-2.added deboogtool url
-3.run python manage.py collectstatic to make admin panel loog good and made sure that the below lines are present in settings.py:
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"  # ◄ Make sure this line is present!
+ProductContext revised — paste this into your frontend ProductContext.jsx:
 
-MEDIA_URL = "/media/"
+import { createContext, useEffect, useState } from "react";
+import { toast } from "react-toastify";
 
-3.To keep django-cloudinary-storage happy without breaking Django 6.0's strict backend rules, we can manually add that expected legacy string definition directly under your modern STORAGES dictionary in settings.py. This gives the third-party package the exact variable text it is hunting for.
-4.  python manage.py collectstatic
-The python manage.py collectstatic command is a built-in Django utility that scans your entire project—including your virtual environment and third-party apps—to gather all scattered static files (like CSS, JavaScript, and images) into a single, centralized location. When using cloud storage like Cloudinary, this command is required because Django stops serving these assets locally. By running it, you successfully uploaded all 174 admin styling files across the internet to your Cloudinary bucket, allowing your browser to download the stylesheets directly from the cloud and completely fix your broken admin panel layout.
+const ProductContext = createContext();
 
+const ProductProvider = ({ children }) => {
+  const baseURL = import.meta.env.VITE_API_BASE_URL;
+  const token = localStorage.getItem("access_token");
 
-5. python manage.py createsuperuser
+  const [products, setProducts] = useState([]);
 
-6. Created usermanager class in models.py. this is to configure how users are created. Becaues changing usernamefield to email breaks django rules and the usermanager fixiex it
+  const [CartItems, setCartItems] = useState(() => {
+    const stored = JSON.parse(localStorage.getItem("cartItems")) || [];
+    const valid = stored.filter((item) => item.name && item.price != null);
+    if (valid.length !== stored.length) {
+      localStorage.setItem("cartItems", JSON.stringify(valid));
+    }
+    return valid;
+  });
 
-7. updated CreateUser view
+  const [cartCount, setCartCount] = useState(0);
 
-8. update add order serializer
-9. Add email credentials in settings.py
+  useEffect(() => {
+    const total = CartItems.reduce((acc, curr) => acc + curr.quantity, 0);
+    setCartCount(total);
+  }, [CartItems]);
 
-10. Revise updateuserSerializer and upddateProductSerializer to destroy old images in cloudinary after image update
+  // When products reload (e.g. image URLs refresh), sync into cart items
+  useEffect(() => {
+    if (products.length === 0) return;
+    setCartItems((prevItems) => {
+      if (prevItems.length === 0) return prevItems;
+      const refreshed = prevItems.map((item) => {
+        const fresh = products.find((p) => parseInt(p.id) === parseInt(item.id));
+        return fresh
+          ? { ...fresh, quantity: item.quantity, size: item.size, cartItemId: item.cartItemId }
+          : item;
+      });
+      const changed = refreshed.some((r, i) => r.image !== prevItems[i]?.image);
+      if (changed) {
+        localStorage.setItem("cartItems", JSON.stringify(refreshed));
+        return refreshed;
+      }
+      return prevItems;
+    });
+  }, [products]);
 
-11. added password reset functionality. (utils, views)
+  const fixImage = (url) => {
+    if (!url) return url;
+    const embedded = url.match(/\/media\/(https?:\/\/.+)$/);
+    if (embedded) return decodeURIComponent(embedded[1]);
+    return url;
+  };
 
+  // Flattens the full cart response from the server into a list the UI can use
+  const syncCartFromServer = (cart) => {
+    const flatItems = cart.items.map((item) => ({
+      ...item.product,
+      quantity: item.quantity,
+      size: item.size,
+      cartItemId: item.id,
+    }));
+    setCartItems(flatItems);
+    localStorage.setItem("cartItems", JSON.stringify(flatItems));
+  };
 
+  const HandleGetProduct = async () => {
+    try {
+      const res = await fetch(`${baseURL}products/`, { method: "GET" });
+      const data = await res.json();
+      if (res.ok) {
+        const normalized = data.map((p) => ({ ...p, image: fixImage(p.image) }));
+        setProducts(normalized);
+        toast.success("Products fetched successfully!");
+      } else {
+        toast.error("Unable to fetch products!");
+      }
+    } catch (error) {
+      console.log("HandleGetProduct error:", error.message);
+    }
+  };
 
+  useEffect(() => {
+    HandleGetProduct();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-*****You need a serializer when:
-Use a serializer when:
-✅ Writing to a database model (create/update)
-✅ Reading from a database model (with nested/complex data)
-✅ Complex validation logic
-✅ Many fields to validate
+  const AddToCart = async (prod, quantity, size) => {
+    try {
+      if (!token) {
+        // Guest: manage cart in localStorage
+        const storedCartItems = JSON.parse(localStorage.getItem("cartItems")) || [];
+        const itemSize = size || prod.defaultSize;
+        const existingItem = storedCartItems.find(
+          (item) => parseInt(item.id) === parseInt(prod.id) && item.size === itemSize,
+        );
 
-Skip a serializer when:
-✅ Just reading a few simple fields from request
-✅ Validation is simple (just checking field exists)
-✅ Not directly saving to a model
+        let updatedCartItems;
+        if (existingItem) {
+          updatedCartItems = storedCartItems.map((item) =>
+            parseInt(item.id) === parseInt(prod.id) && item.size === itemSize
+              ? { ...item, quantity: item.quantity + Number(quantity) }
+              : item,
+          );
+          toast.info("Item quantity updated!");
+        } else {
+          updatedCartItems = [
+            ...storedCartItems,
+            { ...prod, quantity: Number(quantity), size: itemSize },
+          ];
+          toast.success("Item added to cart!");
+        }
 
-12. Correction in CartRemoveItemView and CartRemoveItemView
+        setCartItems(updatedCartItems);
+        localStorage.setItem("cartItems", JSON.stringify(updatedCartItems));
+      } else {
+        // Logged-in: send to backend, replace local cart with server response
+        const res = await fetch(`${baseURL}addCartItem/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            product: prod.id,
+            quantity: Number(quantity),
+            size: size || prod.defaultSize,
+          }),
+        });
 
+        const data = await res.json();
 
-# ❌ WRONG — querying Product model which has no 'cart' field
-cart_item: Product = get_object_or_404(
-    Product, id=item_id, cart__user=request.user
-)
+        if (res.ok) {
+          toast.success("Item added to cart!");
+          syncCartFromServer(data.cart);
+        } else {
+          const message =
+            data?.detail ||
+            data?.non_field_errors?.[0] ||
+            "Failed to add item to cart.";
+          toast.error(message);
+        }
+      }
+    } catch (error) {
+      console.log("AddToCart error:", error.message);
+      toast.error("Something went wrong. Try again.");
+    }
+  };
 
-# ✅ CORRECT — querying Product_cart which has the 'cart' field
-cart_item: Product_cart = get_object_or_404(
-    Product_cart, id=item_id, cart__user=request.user
-)
+  const HandleDeleteCart = async (id) => {
+    try {
+      if (!token) {
+        // Guest: remove from localStorage by product id
+        const storedCartItems = JSON.parse(localStorage.getItem("cartItems")) || [];
+        const exists = storedCartItems.some((item) => parseInt(item.id) === parseInt(id));
 
+        if (exists) {
+          const updatedCartItems = storedCartItems.filter(
+            (item) => parseInt(item.id) !== parseInt(id),
+          );
+          setCartItems(updatedCartItems);
+          localStorage.setItem("cartItems", JSON.stringify(updatedCartItems));
+          toast.success("Item removed from cart!");
+        } else {
+          toast.error("Item does not exist in cart!");
+        }
+      } else {
+        // Logged-in: decrement on server by cartItemId, replace local cart with server response
+        const res = await fetch(`${baseURL}decrementCartItem/${id}/`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
+        const data = await res.json();
 
-13. Get flutterwave secrete key
-FLW_SECRET_KEY=FLWSECK_TEST-xxxxxxxxxxxx-X
-FLW_PUBLIC_KEY=FLWPUBK_TEST-xxxxxxxxxxxx-X
-FRONTEND_DOMAIN=http://localhost:3000
+        if (res.ok) {
+          toast.success("Cart updated!");
+          syncCartFromServer(data.cart);
+        } else {
+          const message = data?.detail || "Failed to update cart.";
+          toast.error(message);
+        }
+      }
+    } catch (error) {
+      console.log("HandleDeleteCart error:", error);
+      toast.error("Something went wrong. Try again.");
+    }
+  };
 
-14.update orderCheckout view and add payment verification view(also update the url)
+  return (
+    <ProductContext.Provider
+      value={{
+        products,
+        AddToCart,
+        HandleGetProduct,
+        cartCount,
+        HandleDeleteCart,
+        token,
+        CartItems,
+        baseURL,
+      }}
+    >
+      {children}
+    </ProductContext.Provider>
+  );
+};
 
-15 create a recipt model
-
-
-16. make Migration and Migrate:
-python manage.py makemigrations
-python manage.py migrate
-
-
-17. fix GetOrderSerializer && AddOrderSerializer
-
-class GetOrderSerializer(serializers.ModelSerializer):
-    items = GetOrderedProduct(source="order_items", many=True, read_only=True)  # ← fix
-
-class AddOrderSerializer(serializers.ModelSerializer):
-    items = GetOrderedProduct(source="order_items", many=True, read_only=True)  # ← fix
-
-
-    1Removed dfr validator in AddCart serializer
+export default ProductProvider;
+export { ProductContext };

@@ -9,6 +9,8 @@ from .views import (
     # Product views
     ProductCreateView,
     ProductUpdateView,
+    ProductListView,
+    ProductDetailView,
     # Cart Views
     CartDetailView,
     CartAddItemView,
@@ -46,6 +48,15 @@ urlpatterns = [
         "updateproduct/<int:product_id>/",
         ProductUpdateView.as_view(),
         name="update-product",
+    ),
+    # =========================================================================
+    # PRODUCT LISTING
+    # =========================================================================
+    # Get all products → http://127.0.0.1:9000/store/products/
+    path("products/", ProductListView.as_view(), name="product-list"),
+    # Get single product → http://127.0.0.1:9000/store/products/1/
+    path(
+        "products/<int:product_id>/", ProductDetailView.as_view(), name="product-detail"
     ),
     # =========================================================================
     # SHOPPING CART MANAGEMENT
