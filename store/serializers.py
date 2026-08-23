@@ -89,8 +89,11 @@ class updateUserSerializer(serializers.ModelSerializer):
         extra_kwargs = {"password": {"write_only": True, "required": False}}
 
     def update(self, instance: "UserType", validated_data: Dict[str, Any]) -> UserType:
+        # 1. Pop password before super().update() runs — prevents storing it as plain text
         password = validated_data.pop("password", None)
 
+        # 2. If a new profile image is being uploaded, delete the old one from Cloudinary
+        #    to avoid accumulating orphaned files that cost storage money
         new_image = validated_data.get("image")
         if new_image and instance.image:
             old_public_id = instance.image.name
@@ -99,9 +102,11 @@ class updateUserSerializer(serializers.ModelSerializer):
             except Exception as e:
                 print("DELETE FAILED:", e)
 
+        # 3. Hash and apply the new password if one was provided
         if password:
             instance.set_password(password)
 
+        # 4. Let the parent update() handle all remaining fields and call .save()
         return super().update(instance, validated_data)
 
 
@@ -153,16 +158,23 @@ class LoginSerializer(serializers.Serializer):
         username = attrs.get("username")
         password = attrs.get("password")
 
+        # 1. Django's authenticate() checks the credentials against the database.
+        #    Returns None if wrong — never raises an exception itself
         user = authenticate(
             username=username, password=password  # because USERNAME_FIELD = "email"
         )
 
+        # 2. Reject invalid credentials — one message for both wrong email and wrong password
+        #    (combining them prevents attackers from knowing which field was wrong)
         if not user:
             raise AuthenticationFailed("Invalid email or password.")
 
+        # 3. Reject deactivated accounts
         if not user.is_active:
             raise AuthenticationFailed("This user account has been deactivated.")
-        # Resend verification email if user hasn't verified yet
+
+        # 4. Reject unverified accounts, but also resend the verification email
+        #    so the user isn't stuck if their original link expired
         if not user.is_verified:
             send_verification_email(user)
             raise AuthenticationFailed(
@@ -170,6 +182,7 @@ class LoginSerializer(serializers.Serializer):
                 "A new verification link has been sent to your email."
             )
 
+        # 5. Attach the user object so the view can access it via serializer.validated_data["user"]
         attrs["user"] = user
         return attrs
 
@@ -305,13 +318,18 @@ class AddToCartSerializer(serializers.ModelSerializer):
         quantity = attrs["quantity"]
         cart = attrs["cart"]
 
+        # Fall back to the product's default size if none was sent
         size = attrs.get("size") or product.defaultSize
 
+        # 1. Check if this exact product+size combo already exists in the cart
         existing_item = ProductCartType.objects.filter(
             cart=cart, product=product, size=size
         ).first()
 
+        # 2. How many units are already sitting in the cart for this line?
         already_in_cart = existing_item.quantity if existing_item else 0
+
+        # 3. Would adding the requested quantity exceed stock?
         total_requested = already_in_cart + quantity
 
         if total_requested > product.quantity:
@@ -327,8 +345,12 @@ class AddToCartSerializer(serializers.ModelSerializer):
         cart = validated_data["cart"]
         quantity = validated_data["quantity"]
 
+        # Fall back to the product's default size if none was sent
         size = validated_data.get("size") or product.defaultSize
 
+        # 1. Try to find an existing cart line for this product+size combo.
+        #    If it doesn't exist, create it with the requested quantity.
+        #    defaults= only applies on creation, not on lookup.
         cart_item, created = ProductCartType.objects.get_or_create(
             cart=cart,
             product=product,
@@ -337,7 +359,7 @@ class AddToCartSerializer(serializers.ModelSerializer):
         )
 
         if not created:
-            # Item already exists — just increment the quantity
+            # 2. Line already exists — add to the existing quantity instead of duplicating
             cart_item.quantity += quantity
             cart_item.save()
 

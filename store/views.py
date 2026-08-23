@@ -37,12 +37,19 @@ class CreateUser(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
-        # FIX: Pass request.FILES alongside request.data explicitly!
+        # 1. Bind the incoming form data (including any uploaded profile image) to the serializer
         serializer = CreateUserSerializer(data=request.data)
+
+        # 2. Run validation — checks required fields, password format, unique email, etc.
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        # 3. Save the new user — triggers the custom create() which hashes the password
+        #    and fires the verification email
         user = serializer.save()
+
+        # 4. Re-serialize the saved user with the read-only serializer to build the response
+        #    (CreateUserSerializer has write-only fields like password we don't want to expose)
         serializer_response = GetUserSerializer(user)
 
         return Response(
@@ -269,20 +276,23 @@ class CartDecrementItemView(APIView):
     permission_classes = [IsAuthenticated]
 
     def patch(self, request, item_id: int) -> Response:
-        # Secure isolation: Ensure the targeted cart line item belongs to this specific user
-
+        # 1. Fetch the cart line and verify it belongs to the requesting user.
+        #    cart__user=request.user prevents one user from modifying another user's cart.
         cart_item: Product_cart = get_object_or_404(
             Product_cart, id=item_id, cart__user=request.user
         )
 
+        # 2. Hold a reference to the parent cart before potentially deleting the line item
         user_cart = cart_item.cart
 
+        # 3. Decrement or delete — if quantity is already 1, removing one more clears the line
         if cart_item.quantity > 1:
             cart_item.quantity -= 1
             cart_item.save()
         else:
             cart_item.delete()
 
+        # 4. Return the full updated cart so the frontend can simply replace its local state
         cart_serializer = CartSerializer(user_cart)
         return Response(
             {
@@ -301,11 +311,16 @@ class CartRemoveItemView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, item_id) -> Response:
-        # Secure boundary query check
+        # 1. Fetch the cart line and verify ownership — prevents cross-user deletion
         cart_item = get_object_or_404(Product_cart, id=item_id, cart__user=request.user)
+
+        # 2. Hold a reference to the parent cart before deleting the line item
         user_cart = cart_item.cart
+
+        # 3. Delete the entire line regardless of quantity (unlike decrement which subtracts 1)
         cart_item.delete()
 
+        # 4. Return the full updated cart so the frontend can simply replace its local state
         cart_serializer = CartSerializer(user_cart)
         return Response(
             {

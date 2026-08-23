@@ -9,17 +9,25 @@ from django.db import models
 class UserManager(BaseUserManager):
     class UserManager(BaseUserManager):
         def create_user(self, email, password=None, **extra_fields):
+            # 1. Email is the login identifier — reject blank values early
             if not email:
                 raise ValueError("The Email field must be set")
+
+            # 2. Normalize the domain part (e.g. User@Example.COM → User@example.com)
             email = self.normalize_email(email)
 
-            # Set sensible defaults for new users
+            # 3. Apply sensible defaults so callers don't have to pass every flag
             extra_fields.setdefault("username", None)
             extra_fields.setdefault("is_active", True)
-            extra_fields.setdefault("is_verified", False)
+            extra_fields.setdefault("is_verified", False)  # requires email verification
 
+            # 4. Build the model instance in memory (no DB write yet)
             user = self.model(email=email, **extra_fields)
+
+            # 5. Hash the password before writing to the database
             user.set_password(password)
+
+            # 6. Persist to the database using the correct connection
             user.save(using=self._db)
             return user
 
@@ -39,14 +47,17 @@ class UserManager(BaseUserManager):
         #     return user
 
         def create_superuser(self, email, password=None, **extra_fields):
+            # 1. Ensure admin flags are set — these grant Django Admin and API admin access
             extra_fields.setdefault("is_staff", True)
             extra_fields.setdefault("is_superuser", True)
 
+            # 2. Guard against someone explicitly passing False for either flag
             if extra_fields.get("is_staff") is not True:
                 raise ValueError("Superuser must have is_staff=True.")
             if extra_fields.get("is_superuser") is not True:
                 raise ValueError("Superuser must have is_superuser=True.")
 
+            # 3. Delegate to create_user — reuses all the hashing and normalization logic
             return self.create_user(email, password, **extra_fields)
 
 from django.contrib.auth.models import BaseUserManager
