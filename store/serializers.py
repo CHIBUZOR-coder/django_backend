@@ -89,21 +89,18 @@ class updateUserSerializer(serializers.ModelSerializer):
         extra_kwargs = {"password": {"write_only": True, "required": False}}
 
     def update(self, instance: "UserType", validated_data: Dict[str, Any]) -> UserType:
+        password = validated_data.pop("password", None)
+
         new_image = validated_data.get("image")
-
-        # ← ADD THESE PRINTS
-        print("NEW IMAGE:", new_image)
-        print("INSTANCE IMAGE:", instance.image)
-        print("INSTANCE IMAGE NAME:", instance.image.name if instance.image else None)
-
         if new_image and instance.image:
             old_public_id = instance.image.name
-            print("DELETING OLD IMAGE:", old_public_id)
             try:
-                result = cloudinary.uploader.destroy(old_public_id)
-                print("CLOUDINARY DELETE RESULT:", result)
+                cloudinary.uploader.destroy(old_public_id)
             except Exception as e:
                 print("DELETE FAILED:", e)
+
+        if password:
+            instance.set_password(password)
 
         return super().update(instance, validated_data)
 
